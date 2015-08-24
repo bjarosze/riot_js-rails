@@ -6,6 +6,7 @@
     mount: function(selector) {
       var component = $(selector);
       var opts = component.data('opts');
+      component.removeAttr('data-opts');
       var mounted = riot.mount(selector, opts);
       this.mounted.push(mounted[0]);
     },

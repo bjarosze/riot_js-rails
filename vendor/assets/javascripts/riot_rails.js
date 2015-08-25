@@ -1,7 +1,7 @@
 ;(function($) {
 
   var riotRails = {
-    componentSelector: '.riot-rails-component',
+    componentClass: 'riot-rails-component',
     mounted: [],
     mount: function(selector) {
       var component = $(selector);
@@ -18,7 +18,7 @@
     },
     mountAll: function() {
       var self = this;
-      $(self.componentSelector).each(function(){
+      $('.' + self.componentClass).each(function(){
         self.mount('#' + $(this).attr('id'));
       });
     }

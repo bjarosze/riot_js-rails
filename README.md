@@ -68,6 +68,11 @@ To generate tag with content use block:
 <% end %>
 ```
 
+If you want to add your own classes to component or any other attributes, pass it as third argument:
+```ruby
+<%= riot_component(:div, :example_tag, { :header => 'Some header' }, { class: 'my-class' }) %>
+```
+
 # HAML, SASS and CoffeeScript
 
 You can define tag using HAML, SASS and CoffeeScript. Example:

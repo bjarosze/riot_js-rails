@@ -3,38 +3,35 @@ module RiotJs
     module Helper
 
       def riot_component(*args, &block)
-        case args.count
-          when 2
-            custom_tag_riot_component(*args, &block)
-          when 3
-            html_tag_riot_component(*args, &block)
-          else
-            raise ArgumentError, 'wrong number of arguments (required 2 or 3)'
+        if args[1].kind_of?(Hash)
+          custom_tag_riot_component(*args, &block)
+        else
+          html_tag_riot_component(*args, &block)
         end
       end
 
       private
 
-      def custom_tag_riot_component(name, data, &block)
-        component_name, attributes = component_attributes(name, data)
+      def custom_tag_riot_component(name, data, attributes={}, &block)
+        component_name, attributes = component_attributes(name, data, attributes)
 
         component_tag(component_name, attributes, &block)
       end
 
-      def html_tag_riot_component(tag, name, data, &block)
-        component_name, attributes = component_attributes(name, data)
+      def html_tag_riot_component(tag, name, data, attributes={}, &block)
+        component_name, attributes = component_attributes(name, data, attributes)
         attributes['riot-tag'] = component_name
 
         component_tag(tag, attributes, &block)
       end
 
-      def component_attributes(name, data)
+      def component_attributes(name, data, attributes)
         component_name = name.to_s.gsub('_', '-')
-        attributes = {
-          id: "riot-#{component_name}-#{Random.rand(10000000)}",
-          class: 'riot-rails-component',
-          data: { opts: data.to_json }
-        }
+        attributes_data = attributes[:data] || attributes['data'] || {}
+        attributes_class = attributes[:class] || attributes['class']
+        attributes = attributes.merge(id: "riot-#{component_name}-#{Random.rand(10000000)}",
+                                      class: "#{attributes_class} riot-rails-component".strip,
+                                      data: attributes_data.merge(opts: data.to_json))
         return component_name, attributes
       end
 

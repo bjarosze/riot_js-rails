@@ -6,11 +6,11 @@ module RiotJs
   module Rails
     class Railtie < ::Rails::Railtie
       initializer :setup_sprockets do |app|
-        app.assets.register_engine '.tag', Processor, mime_type: 'application/javascript'
+        Processor.register_self app
 
         if defined?(::Haml)
           require 'tilt/haml'
-          app.assets.register_engine '.haml', ::Tilt::HamlTemplate, mime_type: 'text/html'
+          app.assets.register_engine '.haml', ::Tilt::HamlTemplate
         end
       end
 

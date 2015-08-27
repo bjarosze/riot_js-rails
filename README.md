@@ -6,6 +6,7 @@ Muut Riot integration with Rails
 
  1. Nodejs - for tags compiling.
  2. jQuery - for tags mounting (if you're going to use helpers provided by gem).
+ 3. Rails 3 and 4 supported
 
 
 ## Installation
@@ -28,7 +29,7 @@ Add ```riot``` and ```riot_rails``` to your ```application.js```:
 
 ## Usage
 
-Put all your components somewhere into ```assets/javascript```. All components tags must have ```.tag``` extension and need to be required in your ```application.js```. This will compile component to Javascript.
+Put all your components somewhere into ```assets/javascript```. All components tags must have ```.tag``` extension (if you use older version of sprockets, try ```.js.tag```) and need to be required in your ```application.js```. This will compile component to Javascript.
 
 
 ## Helpers
@@ -68,7 +69,7 @@ To generate tag with content use block:
 <% end %>
 ```
 
-If you want to add your own classes to component or any other attributes, pass it as third argument:
+If you want to add your own classes to component or any other attributes, pass it as last argument:
 ```ruby
 <%= riot_component(:div, :example_tag, { :header => 'Some header' }, { class: 'my-class' }) %>
 ```
@@ -95,6 +96,8 @@ You can define tag using HAML, SASS and CoffeeScript. Example:
     this.change_header = ()->
       self.header = 'New header'
 ```
+
+Note: file has to have ```.tag.haml``` extension (or ```.js.tag.haml``` for older version of Sprockets)
 
 ## Contributing
 

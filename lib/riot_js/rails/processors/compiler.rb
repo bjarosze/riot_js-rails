@@ -1,6 +1,5 @@
 require 'action_view'
 require 'execjs'
-require 'byebug'
 
 module RiotJs
   module Rails

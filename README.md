@@ -83,7 +83,7 @@ You can define tag using HAML, SASS and CoffeeScript. Example:
     = "{header}"
 
   :scss
-    timer-haml {
+    example-haml {
       h1 {
         background-color: #ffff00;
       }

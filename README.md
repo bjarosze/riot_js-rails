@@ -49,7 +49,7 @@ Alternative approach is to use view helper, e.g.:
 ```
 This will generate following HTML:
 ```html
-<example-tag id="riot-example-tag-2822884" class="riot-rails-component"></example-tag>
+<example-tag data-opts="{&quot;header&quot;:&quot;Some header&quot;}" data-mount></example-tag>
 ```
 and immediate mount it with given options.
 
@@ -59,7 +59,7 @@ You can also use HTML element as tag:
 ```
 which will generate following code:
 ```html
-<div id="riot-example-tag-5012227" class="riot-rails-component" riot-tag="example-tag"></div>
+<div data-opts="{&quot;header&quot;:&quot;Some header&quot;}" data-mount riot-tag="example-tag"></div>
 ```
 
 To generate tag with content use block:
@@ -72,6 +72,11 @@ To generate tag with content use block:
 If you want to add your own classes to component or any other attributes, pass it as last argument:
 ```ruby
 <%= riot_component(:div, :example_tag, { :header => 'Some header' }, { class: 'my-class' }) %>
+```
+
+If you don't want to use helper you can use plain HTML:
+```html
+<example-tag data-riot></example-tag>
 ```
 
 # HAML, SASS and CoffeeScript

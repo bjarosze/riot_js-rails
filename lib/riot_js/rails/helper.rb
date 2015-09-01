@@ -28,10 +28,8 @@ module RiotJs
       def component_attributes(name, data, attributes)
         component_name = name.to_s.gsub('_', '-')
         attributes_data = attributes[:data] || attributes['data'] || {}
-        attributes_class = attributes[:class] || attributes['class']
-        attributes = attributes.merge(id: "riot-#{component_name}-#{Random.rand(10000000)}",
-                                      class: "#{attributes_class} riot-rails-component".strip,
-                                      data: attributes_data.merge(opts: data.to_json))
+        riot_data = { opts: data.to_json, riot: true }
+        attributes = attributes.merge(data: attributes_data.merge(riot_data))
         return component_name, attributes
       end
 

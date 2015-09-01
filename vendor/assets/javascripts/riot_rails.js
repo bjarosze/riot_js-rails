@@ -1,14 +1,20 @@
 ;(function($) {
 
   var riotRails = {
-    componentClass: 'riot-rails-component',
+    componentSelector: '[data-riot]',
     mounted: [],
-    mount: function(selector) {
-      var component = $(selector);
+    mount: function(component) {
+      var mounted, id, generated;
       var opts = component.data('opts');
+      var id = component.attr('id') || 'riot-' + Math.floor((Math.random() * 10000000));
+
+      component.attr('id', id);
+
       component.removeAttr('data-opts');
-      var mounted = riot.mount(selector, opts);
-      this.mounted.push(mounted[0]);
+      component.removeAttr('data-riot');
+
+      mounted = riot.mount('#' + id, opts);
+      this.mounted.concat(mounted);
     },
     unmountAll: function () {
       $.each(this.mounted, function(index, component) {
@@ -18,8 +24,8 @@
     },
     mountAll: function() {
       var self = this;
-      $('.' + self.componentClass).each(function(){
-        self.mount('#' + $(this).attr('id'));
+      $(self.componentSelector).each(function(){
+        self.mount($(this));
       });
     }
   };

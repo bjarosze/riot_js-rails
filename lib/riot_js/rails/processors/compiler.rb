@@ -12,6 +12,7 @@ module RiotJs
           encoding: 'UTF-8',
           runner_path: File.expand_path('../../../../../vendor/assets/javascripts/compiler/node_runner.js', __FILE__),
       )
+      JS_RUNTIME.instance_variable_set :@binary, JS_RUNTIME.send(:locate_binary) if defined?(::Barista)
 
       RIOT_COMPILER_PATH = File.expand_path('../../../../../vendor/assets/javascripts/compiler/compiler.js', __FILE__)
 

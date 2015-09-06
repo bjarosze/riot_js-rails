@@ -18,6 +18,7 @@ module RiotJs
 
       def self.register_self(app)
         app.assets.register_engine '.tag', self, mime_type: 'application/javascript'
+        app.assets.register_engine '.tag.jade', self, mime_type: 'text/jade'
       end
 
       private
@@ -28,6 +29,7 @@ module RiotJs
 
       def prepare(input)
         @context = input[:environment].context_class.new(input)
+        @filename = input[:filename]
         @data = input[:data]
       end
 

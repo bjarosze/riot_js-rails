@@ -79,7 +79,27 @@ If you don't want to use helper you can use plain HTML:
 <example-tag data-riot></example-tag>
 ```
 
-# HAML, SASS and CoffeeScript
+# Built-in preprocessing
+
+You can use one of the Riot built-in preprocessors for javascript.
+Available options are: "coffee", "typescript", "es6" and "none"
+
+Example:
+```
+<my-tag>
+  <script type="coffee">
+    # your coffeescript logic goes here
+  </script>
+</my-tag>
+```
+
+Note that this may require some extra NodeJS modules. Riot-rails uses by default global modules installed by npm (installed with option ```-g```).
+If you want to use local modules add following line to your ```config/application.rb```:
+```
+config.riot.node_paths << '/path/to/your/node_modules'
+```
+
+# Rails preprocessing: HAML, SASS and CoffeeScript
 
 You can define tag using HAML, SASS and CoffeeScript. Example:
 ```haml

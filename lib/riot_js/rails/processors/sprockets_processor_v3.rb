@@ -16,8 +16,10 @@ module RiotJs
         @context.metadata.merge(data: data)
       end
 
-      def self.register_self(app)
-        app.assets.register_engine '.tag', self, mime_type: 'application/javascript'
+      def self.register_self(config)
+        config.assets.configure do |env|
+          env.register_engine '.tag', self, mime_type: 'application/javascript'
+        end
       end
 
       private

@@ -10,3 +10,4 @@
 /.idea
 /*.gem
 /.editorconfig
+/login_to_vagrant.sh

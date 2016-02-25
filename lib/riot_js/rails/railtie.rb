@@ -9,7 +9,7 @@ module RiotJs
       config.riot.node_paths = []
 
       initializer :setup_sprockets do |app|
-        Processor.register_self app
+        Processor.register_self config
 
         if defined?(::Haml)
           require 'tilt/haml'
@@ -20,7 +20,7 @@ module RiotJs
       initializer :add_helpers do |app|
         helpers = %q{ include ::RiotJs::Rails::Helper }
         ::ActionView::Base.module_eval(helpers)
-        ::Rails.application.assets.context_class.class_eval(helpers)
+        ::Rails.application.config.assets.context_class.class_eval(helpers)
       end
 
       config.after_initialize do |app|

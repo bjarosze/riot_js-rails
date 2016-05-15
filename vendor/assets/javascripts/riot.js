@@ -1444,7 +1444,7 @@ function parseExpressions(root, tag, expressions) {
 function Tag(impl, conf, innerHTML) {
 
   var self = riot.observable(this),
-    opts = inherit(conf.opts) || {},
+    opts = (conf.opts) || {},
     parent = conf.parent,
     isLoop = conf.isLoop,
     hasImpl = conf.hasImpl,

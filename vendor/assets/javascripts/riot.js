@@ -1442,7 +1442,7 @@ function parseExpressions(root, tag, expressions) {
 
 }
 function Tag(impl, conf, innerHTML) {
-
+  // console.log("tag2", inherit(conf.opts), conf.opts)
   var self = riot.observable(this),
     opts = inherit(conf.opts) || {},
     parent = conf.parent,

@@ -18,7 +18,8 @@ module RiotJs
 
       def self.register_self(config)
         config.assets.configure do |env|
-          env.register_engine '.tag', self, mime_type: 'application/javascript'
+          opts = { mime_type: 'application/javascript', silence_deprecation: true }
+          env.register_engine '.tag', self, opts
         end
       end
 

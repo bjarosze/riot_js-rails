@@ -21,6 +21,10 @@ module RiotJs
           end
         end
 
+        if defined?(::Slim)
+          require 'slim'
+          Processor.register_nested(app, config, 'slim', :html, ::Slim::Template) do |data|
+            ::Slim::Template.new { data }.render
           end
         end
       end

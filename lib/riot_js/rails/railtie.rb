@@ -16,27 +16,11 @@ module RiotJs
         if defined?(::Haml)
           require 'tilt/haml'
           Haml::Template.options[:format] = :html5
+          Processor.register_nested(app, config, 'haml', :html, ::Tilt::HamlTemplate) do |data|
+            ::Tilt::HamlTemplate.new { data }.render
+          end
+        end
 
-          if config.respond_to?(:assets)
-            config.assets.configure do |env|
-              if env.respond_to?(:register_transformer)
-                # Sprockets 3 and 4
-                env.register_mime_type 'text/riot-tag+haml', extensions: ['.tag.haml'], charset: :html
-                env.register_transformer 'text/riot-tag+haml', 'application/javascript',
-                        Proc.new{ |input| Processor.call(::Haml::Engine.new(input[:data]).render) }
-              elsif env.respond_to?(:register_engine)
-                if Sprockets::VERSION.start_with?("3")
-                  # Sprockets 3 ... is this needed?
-                  env.register_engine '.haml', ::Tilt::HamlTemplate, { silence_deprecation: true }
-                else
-                  # Sprockets 2.12.4
-                  env.register_engine '.haml', ::Tilt::HamlTemplate
-                end
-              end
-            end
-          else
-            # Sprockets 2
-            app.assets.register_engine '.haml', ::Tilt::HamlTemplate
           end
         end
       end

@@ -75,6 +75,30 @@ module RiotJs
         register_self_helper(app, config, '.tag', 'text/riot-tag', 'application/javascript', :html)
       end
 
+      def self.register_nested(app, config, type, charset, tilt_template)
+        extention = '.' + type
+        if config.respond_to?(:assets)
+          config.assets.configure do |env|
+            if env.respond_to?(:register_transformer)
+              # Sprockets 3 and 4
+              env.register_mime_type 'text/riot-tag+'+type, extensions: ['.tag'+extention], charset: charset
+              env.register_transformer 'text/riot-tag+'+type, 'application/javascript',
+                Proc.new{ |input| Processor.call(tilt_template.new{input[:data]}.render) }
+            elsif env.respond_to?(:register_engine)
+              if Sprockets::VERSION.start_with?("3")
+                # Sprockets 3 ... is this needed?
+                env.register_engine extention, tilt_template, { silence_deprecation: true }
+              else
+                # Sprockets 2.12.4
+                env.register_engine extention, tilt_template
+              end
+            end
+          end
+        else
+          # Sprockets 2
+          app.assets.register_engine extention, tilt_template
+        end
+      end
     end
   end
 end

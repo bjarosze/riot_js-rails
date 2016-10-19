@@ -16,16 +16,11 @@ module RiotJs
         if defined?(::Haml)
           require 'tilt/haml'
           Haml::Template.options[:format] = :html5
-          Processor.register_nested(app, config, 'haml', :html, ::Tilt::HamlTemplate) do |data|
-            ::Tilt::HamlTemplate.new { data }.render
-          end
+          Processor.register_nested(app, config, 'haml', :html, ::Tilt::HamlTemplate)
         end
 
         if defined?(::Slim)
-          require 'slim'
-          Processor.register_nested(app, config, 'slim', :html, ::Slim::Template) do |data|
-            ::Slim::Template.new { data }.render
-          end
+          Processor.register_nested(app, config, 'slim', :html, ::Slim::Template)
         end
       end
 

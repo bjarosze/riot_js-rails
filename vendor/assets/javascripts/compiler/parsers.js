@@ -2,205 +2,165 @@
  * The compiler.parsers object holds the compiler's predefined parsers
  * @module
  */
+'use strict'
 
-var path = require('path')    // for sass
+var REQPATH = './parsers/'
+var TRUE    = true
+var NULL    = null
 
-// dummy function for the none and javascript parsers
-function _none (src) { return src }
-
-/** Cache of required modules */
-var _mods = {
-  none: _none,
-  javascript: _none
+// Passtrough for the internal `none` and `javascript` parsers
+function _none (src) {
+  return src
 }
 
-/**
- * Returns the module name for the given parser's name.
- *
- * @param   {string} name - one of the `html`, `css`, or `js` parsers.
- * @returns {string} The module name for using with `require()`
- * @static
-*/
-function _modname (name) {
-  switch (name) {
-    case 'es6':
-      return 'babel'
-    case 'babel':
-      return 'babel-core'
-    case 'javascript':
-      return 'none'
-    case 'coffee':
-    case 'coffeescript':
-      return 'coffee-script'
-    case 'scss':
-    case 'sass':
-      return 'node-sass'
-    case 'typescript':
-      return 'typescript-simple'
-    default:
-      return name
-  }
+// This is the main parsers object holding the html, js, and css keys
+// initialized with the parsers that cannot be required.
+//
+var _parsers = {
+  html: {},
+  css: {},
+  js: { none: _none, javascript: _none }
 }
 
+// Native riot parsers go here, having false if already required.
+var _loaders = {
+  html: { jade: TRUE, pug: TRUE },
+  css: { sass: TRUE, scss: TRUE, less: TRUE, stylus: TRUE },
+  js: { es6: TRUE, buble: TRUE, coffee: TRUE, livescript: TRUE, typescript: TRUE }
+}
+
+_loaders.js.coffeescript = TRUE // 4 the nostalgics
+
 /**
- * Loads a parser instance via `require`, without generating error.
+ * Loads a "native" riot parser.
  *
- * @param   {string}   name       - one of the `html`, `css`, or `js` parsers.
- * @param   {string}   [req=name] - name for `require()`
- * @returns {function} parser function, or null if error
+ * It set the flag in the _loaders object to false for the required parser.
+ * Try to load the parser and save the module to the _parsers object.
+ * On error, throws a custom exception (adds 'riot' notice to the original).
+ * On success returns the loaded module.
+ *
+ * @param   {string} branch - The branch name inside _parsers/loaders
+ * @param   {string} parser - The parser's name
+ * @returns {Function}      Loaded module.
  */
-function _try (name, req) {
+function _load (branch, parser) {
+  var req = REQPATH + (parser === 'coffeescript' ? 'coffee' : parser)
+  var mod
 
-  function fn (r) {
-    try { return require(r) } catch (_) {/**/}
-    return null
+  _loaders[branch][parser] = false  // try once
+  _parsers[branch][parser] = null
+  try {
+    mod = _parsers[branch][parser] = require(req)
+  } catch (e) {
+    // istanbul ignore next
+    var err = 'Can\'t load the ' + branch + '.' + parser +
+              ' riot parser: ' + ('' + e).replace(/^Error:\s/, '')
+    // istanbul ignore next
+    throw new Error(err)
   }
-
-  var p = _mods[name] = fn(req || _modname(name))
-
-  // istanbul ignore next: babel-core v5.8.x is not loaded by CI
-  if (!p && name === 'es6') {
-    p = _mods[name] = fn('babel-core')
-  }
-  return p
+  return mod
 }
 
 /**
- * Returns a parser instance by its name, require the module if necessary.
+ * Returns the branch where the parser resides, or NULL if the parser not found.
+ * If the parameter 'branch' is empty, the precedence order is js, css, html.
+ *
+ * @param   {string} branch - The name of the branch to search, can be empty
+ * @param   {string} name   - The parser's name
+ * @returns {string} Name of the parser branch.
+ */
+function _find (branch, name) {
+  return branch ? _parsers[branch][name] && branch
+    : _parsers.js[name]   ? 'js'
+    : _parsers.css[name]  ? 'css'
+    : _parsers.html[name] ? 'html' : NULL
+}
+
+/**
+ * Returns a parser instance by its name, requiring the module without generating error.
+ * Parsers name can include the branch (ej. 'js.es6').
+ * If branch is not included, the precedence order for searching is 'js', 'css', 'html'
+ *
  * Public through the `parsers._req` function.
  *
- * @param   {string} name  - The parser's name, as registered in the parsers object
- * @param   {string} [req] - To be used by `_try` with `require`
- * @returns {function} The parser instance, null if the parser is not found
- * @static
+ * @param   {string}   name  - The parser's name, as registered in the parsers object
+ * @param   {boolean}  [req] - true if required (throws on error)
+ * @returns {Function} The parser instance, null if the parser is not found.
  */
 function _req (name, req) {
-  return name in _mods ? _mods[name] : _try(name, req)
+  var
+    err,
+    mod,
+    branch,
+    parser = name.split('.')
+
+  if (parser.length > 1) {
+    branch = parser[0]
+    parser = parser[1]
+  } else {
+    branch = NULL
+    parser = name
+  }
+
+  // is the parser registered?
+  branch = _find(branch, parser)
+  if (!branch) {
+    if (req) {
+      err = 'Riot parser "' + name + '" is not registered.'
+      throw new Error(err)
+    }
+    return NULL
+  }
+
+  // parser registered, needs load?
+  if (_loaders[branch][parser]) {
+    if (req) {
+      mod = _load(branch, parser)
+    } else {
+      try {
+        mod = _load(branch, parser)
+      } catch (_) {
+        // istanbul ignore next
+        mod = NULL
+      }
+    }
+  } else {
+    mod = _parsers[branch][parser]
+  }
+
+  return mod
 }
 
 /**
- * Merge the properties of the first object with the properties of the second.
+ * Fill the parsers object with loaders for each parser.
  *
- * @param   {object} target - Target object
- * @param   {object} source - Source of the extra properties
- * @returns {object} Target object containing the new properties
+ * @param   {Object} _p - The `parsers` object
+ * @returns {Object}      The received object.
+ * @private
  */
-function extend (target, source) {
-  if (source) {
-    for (var prop in source) {
-      /* istanbul ignore next */
-      if (source.hasOwnProperty(prop)) {
-        target[prop] = source[prop]
-      }
+function _setLoaders (_p) {
+
+  // loads the module at first use and returns the parsed result
+  function mkloader (branch, parser) {
+    return function _loadParser (p1, p2, p3, p4) {
+      var fn = _load(branch, parser)
+      return fn(p1, p2, p3, p4)
     }
   }
-  return target
-}
 
-module.exports = {
-  /**
-   * The HTML parsers.
-   * @prop {function} jade - http://jade-lang.com
-   */
-  html: {
-    jade: function (html, opts, url) {
-      opts = extend({
-        pretty: true,
-        filename: url,
-        doctype: 'html'
-      }, opts)
-      return _req('jade').render(html, opts)
-    }
-  },
-  /**
-   * Style parsers. In browsers, only less is supported.
-   * @prop {function} sass   - http://sass-lang.com
-   * @prop {function} scss   - http://sass-lang.com
-   * @prop {function} less   - http://lesscss.org
-   * @prop {function} stylus - http://stylus-lang.com
-   */
-  css: {
-    sass: function (tag, css, opts, url) {
-      opts = extend({
-        data: css,
-        includePaths: [path.dirname(url)],
-        indentedSyntax: true,
-        omitSourceMapUrl: true,
-        outputStyle: 'compact'
-      }, opts)
-      return _req('sass').renderSync(opts).css + ''
-    },
-    scss: function (tag, css, opts, url) {
-      opts = extend({
-        data: css,
-        includePaths: [path.dirname(url)],
-        indentedSyntax: false,
-        omitSourceMapUrl: true,
-        outputStyle: 'compact'
-      }, opts)
-      return _req('scss').renderSync(opts).css + ''
-    },
-    less: function (tag, css, opts, url) {
-      var ret
+  for (var branch in _loaders) {
+    // istanbul ignore else
+    if (_loaders.hasOwnProperty(branch)) {
+      var names = Object.keys(_loaders[branch])
 
-      opts = extend({
-        sync: true,
-        syncImport: true,
-        filename: url
-      }, opts)
-      _req('less').render(css, opts, function (err, result) {
-        /* istanbul ignore next */
-        if (err) throw err
-        ret = result.css
+      names.forEach(function (name) {
+        _p[branch][name] = mkloader(branch, name)
       })
-      return ret
-    },
-    stylus: function (tag, css, opts, url) {
-      var
-        stylus = _req('stylus'),
-        nib = _req('nib') // optional nib support
-
-      opts = extend({ filename: url }, opts)
-      /* istanbul ignore next: can't run both */
-      return nib
-        ? stylus(css, opts).use(nib()).import('nib').render() : stylus.render(css, opts)
     }
-  },
-  /**
-   * The JavaScript parsers.
-   * @prop {function} es6    - https://babeljs.io - babel or babel-core up to v5.8
-   * @prop {function} babel  - https://babeljs.io - for v6.x or later
-   * @prop {function} coffee - http://coffeescript.org
-   * @prop {function} livescript - http://livescript.net
-   * @prop {function} typescript - http://www.typescriptlang.org
-   */
-  js: {
-    es6: function (js, opts) {
-      opts = extend({
-        blacklist: ['useStrict', 'strict', 'react'],
-        sourceMaps: false,
-        comments: false
-      }, opts)
-      return _req('es6').transform(js, opts).code
-    },
-    babel: function (js, opts, url) {
-      return _req('babel').transform(js, extend({ filename: url }, opts)).code
-    },
-    coffee: function (js, opts) {
-      return _req('coffee').compile(js, extend({ bare: true }, opts))
-    },
-    livescript: function (js, opts) {
-      return _req('livescript').compile(js, extend({ bare: true, header: false }, opts))
-    },
-    typescript: function (js, opts) {
-      return _req('typescript')(js, opts)
-    },
-    none: _none, javascript: _none
-  },
-  _modname: _modname,
-  _req: _req
+  }
+  return _p
 }
 
-exports = module.exports
-exports.js.coffeescript = exports.js.coffee     // 4 the nostalgics
+_setLoaders(_parsers)._req = _req
 
+module.exports = _parsers

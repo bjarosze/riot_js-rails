@@ -4,13 +4,17 @@
  * @module compiler
  * @version WIP
  * @license MIT
- * @copyright 2015 Muut Inc. + contributors
+ * @copyright Muut Inc. + contributors
  */
 'use strict'
 
-var brackets = require('./brackets')
-var parsers = require('./parsers')
-var path = require('path')
+var brackets  = require('./brackets')
+var parsers   = require('./parsers')
+var safeRegex = require('./safe-regex')
+var path      = require('path')
+
+var extend = require('./parsers/_utils').mixobj
+/* eslint-enable */
 
 /**
  * Source for creating regexes matching valid quoted, single-line JavaScript strings.
@@ -54,20 +58,14 @@ var HTML_COMMS = RegExp(/<!--(?!>)[\S\s]*?-->/.source + '|' + S_LINESTR, 'g')
  *  {@link module:compiler~parseAttribs|parseAttribs}
  * @const {RegExp}
  */
-var HTML_TAGS = /<([-\w]+)(?:\s+([^"'\/>]*(?:(?:"[^"]*"|'[^']*'|\/[^>])[^'"\/>]*)*)|\s*)(\/?)>/g
+var HTML_TAGS = /<(-?[A-Za-z][-\w\xA0-\xFF]*)(?:\s+([^"'\/>]*(?:(?:"[^"]*"|'[^']*'|\/[^>])[^'"\/>]*)*)|\s*)(\/?)>/g
 
 /**
- * Matches boolean HTML attributes, prefixed with `"__"` in the riot tag definition.
- * Used by {@link module:compiler~parseAttribs|parseAttribs} with lowercase names.
- * With a long list like this, a regex is faster than `[].indexOf` in most browsers.
- * @const {RegExp}
- * @see [attributes.md](https://github.com/riot/compiler/blob/dev/doc/attributes.md)
+ * Matches spaces and tabs between HTML tags
+ * Used by the `compact` option.
+ * @const RegExp
  */
-var BOOL_ATTRS = RegExp(
-    '^(?:disabled|checked|readonly|required|allowfullscreen|auto(?:focus|play)|' +
-    'compact|controls|default|formnovalidate|hidden|ismap|itemscope|loop|' +
-    'multiple|muted|no(?:resize|shade|validate|wrap)?|open|reversed|seamless|' +
-    'selected|sortable|truespeed|typemustmatch)$')
+var HTML_PACK = />[ \t]+<(-?[A-Za-z]|\/[-A-Za-z])/g
 
 /**
  * These attributes give error when parsed on browsers with an expression in its value.
@@ -76,7 +74,7 @@ var BOOL_ATTRS = RegExp(
  * @const {Array}
  * @see [attributes.md](https://github.com/riot/compiler/blob/dev/doc/attributes.md)
  */
-var RIOT_ATTRS = ['style', 'src', 'd']
+var RIOT_ATTRS = ['style', 'src', 'd', 'value']
 
 /**
  * HTML5 void elements that cannot be auto-closed.
@@ -104,12 +102,22 @@ var PRE_TAGS = /<pre(?:\s+(?:[^">]*|"[^"]*")*)?>([\S\s]+?)<\/pre\s*>/gi
 var SPEC_TYPES = /^"(?:number|date(?:time)?|time|month|email|color)\b/i
 
 /**
+ * Matches the 'import' statement
+ * @const {RegExp}
+ */
+var IMPORT_STATEMENT = /^\s*import(?:(?:\s|[^\s'"])*)['|"].*\n?/gm
+
+/**
  * Matches trailing spaces and tabs by line.
  * @const {RegExp}
  */
 var TRIM_TRAIL = /[ \t]+$/gm
 
 var
+  RE_HASEXPR = safeRegex(/@#\d/, 'x01'),
+  RE_REPEXPR = safeRegex(/@#(\d+)/g, 'x01'),
+  CH_IDEXPR  = '\x01#',
+  CH_DQCODE  = '\u2057',
   DQ = '"',
   SQ = "'"
 
@@ -132,7 +140,7 @@ function cleanSource (src) {
   }
 
   re.lastIndex = 0
-  while (mm = re.exec(src)) {
+  while ((mm = re.exec(src))) {
     if (mm[0][0] === '<') {
       src = RegExp.leftContext + RegExp.rightContext
       re.lastIndex = mm[3] + 1
@@ -160,7 +168,7 @@ function parseAttribs (str, pcex) {
 
   str = str.replace(/\s+/g, ' ')
 
-  while (match = HTML_ATTRS.exec(str)) {
+  while ((match = HTML_ATTRS.exec(str))) {
     var
       k = match[1].toLowerCase(),
       v = match[2]
@@ -176,11 +184,10 @@ function parseAttribs (str, pcex) {
       if (k === 'type' && SPEC_TYPES.test(v)) {
         type = v
       } else {
-        if (/\u0001\d/.test(v)) {
+        if (RE_HASEXPR.test(v)) {
 
           if (k === 'value') vexp = 1
-          else if (BOOL_ATTRS.test(k)) k = '__' + k
-          else if (~RIOT_ATTRS.indexOf(k)) k = 'riot-' + k
+          if (~RIOT_ATTRS.indexOf(k)) k = 'riot-' + k
         }
 
         list.push(k + '=' + v)
@@ -213,19 +220,17 @@ function splitHtml (html, opts, pcex) {
     var
       jsfn = opts.expr && (opts.parser || opts.type) ? _compileJS : 0,
       list = brackets.split(html, 0, _bp),
-      expr, israw
+      expr
 
     for (var i = 1; i < list.length; i += 2) {
       expr = list[i]
       if (expr[0] === '^') {
         expr = expr.slice(1)
       } else if (jsfn) {
-        israw = expr[0] === '='
-        expr = jsfn(israw ? expr.slice(1) : expr, opts).trim()
+        expr = jsfn(expr, opts).trim()
         if (expr.slice(-1) === ';') expr = expr.slice(0, -1)
-        if (israw) expr = '=' + expr
       }
-      list[i] = '\u0001' + (pcex.push(expr) - 1) + _bp[1]
+      list[i] = CH_IDEXPR + (pcex.push(expr) - 1) + _bp[1]
     }
     html = list.join('')
   }
@@ -242,20 +247,10 @@ function splitHtml (html, opts, pcex) {
  */
 function restoreExpr (html, pcex) {
   if (pcex.length) {
-    html = html
-      .replace(/\u0001(\d+)/g, function (_, d) {
-        var expr = pcex[d]
+    html = html.replace(RE_REPEXPR, function (_, d) {
 
-        if (expr[0] === '=') {
-          expr = expr.replace(brackets.R_STRINGS, function (qs) {
-            return qs
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-          })
-        }
-
-        return pcex._bp[0] + expr.trim().replace(/[\r\n]+/g, ' ').replace(/"/g, '\u2057')
-      })
+      return pcex._bp[0] + pcex[d].trim().replace(/[\r\n]+/g, ' ').replace(/"/g, CH_DQCODE)
+    })
   }
   return html
 }
@@ -271,6 +266,7 @@ function restoreExpr (html, pcex) {
  * @see {@link http://www.w3.org/TR/html5/syntax.html}
  */
 function _compileHTML (html, opts, pcex) {
+  if (!/\S/.test(html)) return ''
 
   html = splitHtml(html, opts, pcex)
     .replace(HTML_TAGS, function (_, name, attr, ends) {
@@ -299,7 +295,7 @@ function _compileHTML (html, opts, pcex) {
     if (p.length) html = html.replace(/\u0002/g, function () { return p.shift() })
   }
 
-  if (opts.compact) html = html.replace(/>[ \t]+<([-\w\/])/g, '><$1')
+  if (opts.compact) html = html.replace(HTML_PACK, '><$1')
 
   return restoreExpr(html, pcex).replace(TRIM_TRAIL, '')
 }
@@ -377,7 +373,7 @@ function riotjs (js) {
 
   if (~js.indexOf('/')) js = rmComms(js, JS_COMMS)
 
-  while (match = js.match(JS_ES6SIGN)) {
+  while ((match = js.match(JS_ES6SIGN))) {
 
     parts.push(RE.leftContext)
     js  = RE.rightContext
@@ -396,7 +392,7 @@ function riotjs (js) {
 
   function rmComms (s, r, m) {
     r.lastIndex = 0
-    while (m = r.exec(s)) {
+    while ((m = r.exec(s))) {
       if (m[0][0] === '/' && !m[1] && !m[2]) {
         s = RE.leftContext + ' ' + RE.rightContext
         r.lastIndex = m[3] + 1
@@ -434,11 +430,8 @@ function _compileJS (js, opts, type, parserOpts, url) {
   if (!/\S/.test(js)) return ''
   if (!type) type = opts.type
 
-  var parser = opts.parser || (type ? parsers.js[type] : riotjs)
+  var parser = opts.parser || type && parsers._req('js.' + type, true) || riotjs
 
-  if (!parser) {
-    throw new Error('JS parser not found: "' + type + '"')
-  }
   return parser(js, parserOpts, url).replace(/\r\n?/g, '\n').replace(TRIM_TRAIL, '')
 }
 
@@ -478,7 +471,7 @@ function compileJS (js, opts, type, userOpts) {
   return _compileJS(js, opts || {}, type, userOpts.parserOptions, userOpts.url)
 }
 
-var CSS_SELECTOR = RegExp('([{}]|^)[ ;]*([^@ ;{}][^{}]*)(?={)|' + S_LINESTR, 'g')
+var CSS_SELECTOR = RegExp('([{}]|^)[; ]*((?:[^@ ;{}][^{}]*)?[^@ ;{}:] ?)(?={)|' + S_LINESTR, 'g')
 
 /**
  * Parses styles enclosed in a "scoped" tag (`scoped` was removed from HTML5).
@@ -498,17 +491,21 @@ function scopedCSS (tag, css) {
     p2 = p2.replace(/[^,]+/g, function (sel) {
       var s = sel.trim()
 
+      if (s.indexOf(tag) === 0) {
+        return sel
+      }
+
       if (!s || s === 'from' || s === 'to' || s.slice(-1) === '%') {
         return sel
       }
 
       if (s.indexOf(scope) < 0) {
-        s = tag + ' ' + s + ',[riot-tag="' + tag + '"] ' + s
+        s = tag + ' ' + s + ',[data-is="' + tag + '"] ' + s
       } else {
         s = s.replace(scope, tag) + ',' +
-            s.replace(scope, '[riot-tag="' + tag + '"]')
+            s.replace(scope, '[data-is="' + tag + '"]')
       }
-      return sel.slice(-1) === ' ' ? s + ' ' : s
+      return s
     })
 
     return p1 ? p1 + ' ' + p2 : p2
@@ -530,26 +527,19 @@ function scopedCSS (tag, css) {
  * @see {@link module:compiler.compileCSS|compileCSS}
  */
 function _compileCSS (css, tag, type, opts) {
-  var scoped = (opts || (opts = {})).scoped
+  opts = opts || {}
 
   if (type) {
-    if (type === 'scoped-css') {
-      scoped = true
-    } else if (parsers.css[type]) {
-      css = parsers.css[type](tag, css, opts.parserOpts || {}, opts.url)
-    } else if (type !== 'css') {
-      throw new Error('CSS parser not found: "' + type + '"')
+    if (type !== 'css') {
+
+      var parser = parsers._req('css.' + type, true)
+      css = parser(tag, css, opts.parserOpts || {}, opts.url)
     }
   }
 
   css = css.replace(brackets.R_MLCOMMS, '').replace(/\s+/g, ' ').trim()
+  if (tag) css = scopedCSS(tag, css)
 
-  if (scoped) {
-    if (!tag) {
-      throw new Error('Can not parse scoped CSS without a tagName')
-    }
-    css = scopedCSS(tag, css)
-  }
   return css
 }
 
@@ -624,7 +614,7 @@ var MISC_ATTR = '\\s*=\\s*(' + S_STRINGS + '|{[^}]+}|\\S+)'
  * ```
  * @const {RegExp}
  */
-var END_TAGS = /\/>\n|^<(?:\/?[-\w]+\s*|[-\w]+\s+[-\w:\xA0-\xFF][\S\s]*?)>\n/
+var END_TAGS = /\/>\n|^<(?:\/?-?[A-Za-z][-\w\xA0-\xFF]*\s*|-?[A-Za-z][-\w\xA0-\xFF]*\s+[-\w:\xA0-\xFF][\S\s]*?)>\n/
 
 /**
  * Encloses the given string in single quotes.
@@ -646,25 +636,26 @@ function _q (s, r) {
 /**
  * Generates code to call the `riot.tag2` function with the processed parts.
  *
- * @param   {string} name    - The tag name
- * @param   {string} html    - HTML (can contain embeded eols)
- * @param   {string} css     - Styles
- * @param   {string} attribs - Root attributes
- * @param   {string} js      - JavaScript "constructor"
- * @param   {Array}  pcex    - Expressions
+ * @param   {string} name - The tag name
+ * @param   {string} html - HTML (can contain embeded eols)
+ * @param   {string} css  - Styles
+ * @param   {string} attr - Root attributes
+ * @param   {string} js   - JavaScript "constructor"
+ * @param   {string} imports - Code containing 'import' statements
+ * @param   {object} opts - Compiler options
  * @returns {string} Code to call `riot.tag2`
  */
-function mktag (name, html, css, attribs, js, pcex) {
+function mktag (name, html, css, attr, js, imports, opts) {
   var
-    c = ', ',
-    s = '}' + (pcex.length ? ', ' + _q(pcex._bp[8]) : '') + ');'
+    c = opts.debug ? ',\n  ' : ', ',
+    s = '});'
 
   if (js && js.slice(-1) !== '\n') s = '\n' + s
 
-  return 'riot.tag2(\'' + name + SQ +
+  return imports + 'riot.tag2(\'' + name + SQ +
     c + _q(html, 1) +
     c + _q(css) +
-    c + _q(attribs) + ', function(opts) {\n' + js + s
+    c + _q(attr) + ', function(opts) {\n' + js + s
 }
 
 /**
@@ -686,7 +677,9 @@ function splitBlocks (str) {
       m = str.slice(k, n).match(END_TAGS)
       if (m) {
         k += m.index + m[0].length
-        return [str.slice(0, k), str.slice(k)]
+        m = str.slice(0, k)
+        if (m.slice(-5) === '<-/>\n') m = m.slice(0, -5)
+        return [m, str.slice(k)]
       }
       n = k
       k = str.lastIndexOf('<', k - 1)
@@ -733,13 +726,27 @@ function getAttrib (attribs, name) {
 }
 
 /**
+ * Unescape any html string
+ * @param   {string} str escaped html string
+ * @returns {string} unescaped html string
+ */
+function unescapeHTML (str) {
+  return str
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#039;/g, '\'')
+}
+
+/**
  * Gets the parser options from the "options" attribute.
  *
  * @param   {string} attribs - The attribute list
  * @returns {object} Parsed options, or null if no options
  */
 function getParserOptions (attribs) {
-  var opts = getAttrib(attribs, 'options')
+  var opts = unescapeHTML(getAttrib(attribs, 'options'))
 
   return opts ? JSON.parse(opts) : null
 }
@@ -756,9 +763,10 @@ function getParserOptions (attribs) {
  * @returns {string} Parsed code
  */
 function getCode (code, opts, attribs, base) {
-  var type = getType(attribs)
-
-  var src = getAttrib(attribs, 'src')
+  var
+    type = getType(attribs),
+    src  = getAttrib(attribs, 'src'),
+    jsParserOptions = extend({}, opts.parserOptions.js)
 
   if (src) {
     if (DEFER_ATTR.test(attribs)) return false
@@ -768,7 +776,14 @@ function getCode (code, opts, attribs, base) {
 
     code = require('fs').readFileSync(file, charset || 'utf8')
   }
-  return _compileJS(code, opts, type, getParserOptions(attribs), base)
+
+  return _compileJS(
+          code,
+          opts,
+          type,
+          extend(jsParserOptions, getParserOptions(attribs)),
+          base
+        )
 }
 
 /**
@@ -782,11 +797,12 @@ function getCode (code, opts, attribs, base) {
  * @returns {string} Parsed styles
  */
 function cssCode (code, opts, attribs, url, tag) {
-  var extraOpts = {
-    parserOpts: getParserOptions(attribs),
-    scoped: attribs && /\sscoped(\s|=|$)/i.test(attribs),
-    url: url
-  }
+  var
+    parserStyleOptions = extend({}, opts.parserOptions.style),
+    extraOpts = {
+      parserOpts: extend(parserStyleOptions, getParserOptions(attribs)),
+      url: url
+    }
 
   return _compileCSS(code, tag, getType(attribs) || opts.style, extraOpts)
 }
@@ -803,11 +819,8 @@ function cssCode (code, opts, attribs, url, tag) {
  * @throws  Will throw "Template parser not found" if the HTML parser cannot be loaded.
  */
 function compileTemplate (html, url, lang, opts) {
-  var parser = parsers.html[lang]
 
-  if (!parser) {
-    throw new Error('Template parser not found: "' + lang + '"')
-  }
+  var parser = parsers._req('html.' + lang, true)
   return parser(html, opts, url)
 }
 
@@ -820,7 +833,7 @@ var
    * unquoted expressions, but disallows the character '>' within unquoted attribute values.
    * @const {RegExp}
    */
-  CUST_TAG = RegExp(/^([ \t]*)<([-\w]+)(?:\s+([^'"\/>]+(?:(?:@|\/[^>])[^'"\/>]*)*)|\s*)?(?:\/>|>[ \t]*\n?([\S\s]*)^\1<\/\2\s*>|>(.*)<\/\2\s*>)/
+  CUST_TAG = RegExp(/^([ \t]*)<(-?[A-Za-z][-\w\xA0-\xFF]*)(?:\s+([^'"\/>]+(?:(?:@|\/[^>])[^'"\/>]*)*)|\s*)?(?:\/>|>[ \t]*\n?([\S\s]*)^\1<\/\2\s*>|>(.*)<\/\2\s*>)/
     .source.replace('@', S_STRINGS), 'gim'),
   /**
    * Matches `script` elements, capturing its attributes in $1 and its content in $2.
@@ -865,9 +878,17 @@ var
 function compile (src, opts, url) {
   var
     parts = [],
-    included
+    included,
+    defaultParserptions = {
+
+      template: {},
+      js: {},
+      style: {}
+    }
 
   if (!opts) opts = {}
+
+  opts.parserOptions = extend(defaultParserptions, opts.parserOptions || {})
 
   included = opts.exclude
     ? function (s) { return opts.exclude.indexOf(s) < 0 } : function () { return 1 }
@@ -877,7 +898,7 @@ function compile (src, opts, url) {
   var _bp = brackets.array(opts.brackets)
 
   if (opts.template) {
-    src = compileTemplate(src, url, opts.template, opts.templateOptions)
+    src = compileTemplate(src, url, opts.template, opts.parserOptions.template)
   }
 
   src = cleanSource(src)
@@ -886,6 +907,7 @@ function compile (src, opts, url) {
         jscode = '',
         styles = '',
         html = '',
+        imports = '',
         pcex = []
 
       pcex._bp = _bp
@@ -908,19 +930,19 @@ function compile (src, opts, url) {
 
           body = body.replace(RegExp('^' + indent, 'gm'), '')
 
-          body = body.replace(STYLES, function (_m, _attrs, _style) {
-            if (included('css')) {
-              styles += (styles ? ' ' : '') + cssCode(_style, opts, _attrs, url, tagName)
-            }
-            return ''
-          })
-
           body = body.replace(SCRIPTS, function (_m, _attrs, _script) {
             if (included('js')) {
               var code = getCode(_script, opts, _attrs, url)
 
               if (code === false) return _m.replace(DEFER_ATTR, '')
               if (code) jscode += (jscode ? '\n' : '') + code
+            }
+            return ''
+          })
+
+          body = body.replace(STYLES, function (_m, _attrs, _style) {
+            if (included('css')) {
+              styles += (styles ? ' ' : '') + cssCode(_style, opts, _attrs, url, tagName)
             }
             return ''
           })
@@ -934,6 +956,10 @@ function compile (src, opts, url) {
           if (included('js')) {
             body = _compileJS(blocks[1], opts, null, null, url)
             if (body) jscode += (jscode ? '\n' : '') + body
+            jscode = jscode.replace(IMPORT_STATEMENT, function (s) {
+              imports += s.trim() + '\n'
+              return ''
+            })
           }
         }
       }
@@ -946,12 +972,13 @@ function compile (src, opts, url) {
           html: html,
           css: styles,
           attribs: attribs,
-          js: jscode
+          js: jscode,
+          imports: imports
         })
         return ''
       }
 
-      return mktag(tagName, html, styles, attribs, jscode, pcex)
+      return mktag(tagName, html, styles, attribs, jscode, imports, opts)
     })
 
   if (opts.entities) return parts

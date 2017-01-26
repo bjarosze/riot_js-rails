@@ -1,8 +1,8 @@
-/* Riot WIP, @license MIT */
+/* Riot v3.0.7, @license MIT */
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
-	typeof define === 'function' && define.amd ? define(['exports'], factory) :
-	(factory((global.riot = global.riot || {})));
+  typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
+  typeof define === 'function' && define.amd ? define(['exports'], factory) :
+  (factory((global.riot = global.riot || {})));
 }(this, (function (exports) { 'use strict';
 
 var __TAGS_CACHE = [];

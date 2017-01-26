@@ -11,6 +11,6 @@ class TestRiotJsRails < Minitest::Test
 
     tag_compiled = ::RiotJs::Rails::Compiler.compile(tag_source)
 
-    assert_equal "riot.tag2('test-tag', '<h1>{test}</h1><style>test-tag h1 {background-color: #666666;}</style><script>this.test = opts.test</script>', '', '', function(opts) {\n}, '{ }');", tag_compiled
+    assert_equal "riot.tag2('test-tag', '<h1>{test}</h1><style>test-tag h1 {background-color: #666666;}</style><script>this.test = opts.test</script>', '', '', function(opts) {\n});", tag_compiled
   end
 end

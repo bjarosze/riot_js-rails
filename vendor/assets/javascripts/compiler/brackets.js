@@ -1,7 +1,10 @@
+'use strict'
+
 /**
  * Brackets support for the node.js version of the riot-compiler
  * @module
  */
+var safeRegex = require('./safe-regex.js')
 
 /**
  * Matches valid, multiline JavaScript comments in almost all its forms.
@@ -128,7 +131,7 @@ module.exports.split = function split (str, _, _bp) {
 
   isexpr = start = re.lastIndex = 0       // re is reused, we must reset lastIndex
 
-  while (match = re.exec(str)) {
+  while ((match = re.exec(str))) {
 
     pos = match.index
 
@@ -202,7 +205,7 @@ module.exports.split = function split (str, _, _bp) {
 
     rr.lastIndex = ix
     ix = 1
-    while (mm = rr.exec(s)) {
+    while ((mm = rr.exec(s))) {
       if (mm[1] &&
         !(mm[1] === ch ? ++ix : --ix)) break
     }
@@ -214,9 +217,8 @@ module.exports.split = function split (str, _, _bp) {
   }
 }
 
-var
-  INVALIDCH = /[\x00-\x1F<>a-zA-Z0-9'",;\\]/,   // invalid characters for brackets
-  ESCAPEDCH = /(?=[[\]()*+?.^$|])/g             // this characters must be escaped
+var INVALIDCH = safeRegex(/[@-@<>a-zA-Z0-9'",;\\]/, 'x00', 'x1F')   // invalid characters for brackets
+var ESCAPEDCH = /(?=[[\]()*+?.^$|])/g                               // this characters must be escaped
 
 /**
  * Returns an array with information for the given brackets using a cache for the

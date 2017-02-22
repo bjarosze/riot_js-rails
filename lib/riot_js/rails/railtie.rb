@@ -11,9 +11,13 @@ module RiotJs
       initializer :setup_sprockets do |app|
         Processor.register_self config
 
-        if defined?(::Haml)
+        if defined? ::Haml
           require 'tilt/haml'
-          app.assets.register_engine '.haml', ::Tilt::HamlTemplate
+          config.assets.register_engine '.haml', ::Tilt::HamlTemplate
+        end
+
+        if defined? ::Slim
+          config.assets.register_engine '.slim', ::Slim::Template
         end
       end
 

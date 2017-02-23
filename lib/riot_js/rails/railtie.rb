@@ -9,18 +9,11 @@ module RiotJs
       config.riot.node_paths = []
 
       initializer :setup_sprockets do |app|
-        # app is a YourApp::Application
-        # config is Rails::Railtie::Configuration that belongs to RiotJs::Rails::Railtie
-        Processor.register_self app, config
+        Processor.register_self config
 
         if defined?(::Haml)
           require 'tilt/haml'
-          Haml::Template.options[:format] = :html5
-          Processor.register_nested(app, config, 'haml', :html, ::Tilt::HamlTemplate)
-        end
-
-        if defined?(::Slim)
-          Processor.register_nested(app, config, 'slim', :html, ::Slim::Template)
+          app.assets.register_engine '.haml', ::Tilt::HamlTemplate
         end
       end
 
@@ -38,6 +31,7 @@ module RiotJs
 
         ENV['NODE_PATH'] = node_paths.join(':')
       end
+
 
       def detect_node_global_path
         prefix = `npm config get prefix`.to_s.chomp("\n")

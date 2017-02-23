@@ -1,103 +1,23 @@
 require 'riot_js/rails/processors/compiler'
 
+if Gem::Version.new(Sprockets::VERSION) < Gem::Version.new('3.0.0')
+  require 'riot_js/rails/processors/sprockets_processor_v2'
+else
+  require 'riot_js/rails/processors/sprockets_processor_v3'
+end
+
 module RiotJs
   module Rails
+    class Processor < SprocketsProcessor
 
-    # Sprockets 2, 3 & 4 interface
-    class SprocketsExtensionBase
-      attr_reader :default_mime_type
-
-      def initialize(filename, &block)
-        @filename = filename
-        @source   = block.call
-      end
-
-      def render(context, empty_hash_wtf)
-        self.class.run(@filename, @source, context)
-      end
-
-      def self.run(filename, source, context)
-        raise 'Not implemented'
-      end
-
-      def self.call(input)
-        if input.is_a?(String)
-          run("", input, nil)
-        else
-          filename = input[:filename]
-          source   = input[:data]
-          context  = input[:environment].context_class.new(input)
-
-          result = run(filename, source, context)
-          context.metadata.merge(data: result)
-        end
+      def process
+        compile_tag
       end
 
       private
 
-      def self.register_self_helper(app, config, file_ext, mime_type_from, mime_type_to, charset=nil)
-
-        if config.respond_to?(:assets)
-          config.assets.configure do |env|
-            if env.respond_to?(:register_transformer)
-              # Sprockets 3 and 4
-              env.register_mime_type mime_type_from, extensions: [file_ext], charset: charset
-              env.register_transformer mime_type_from, mime_type_to, self
-            elsif env.respond_to?(:register_engine)
-              if Sprockets::VERSION.start_with?("3")
-                # Sprockets 3 ... is this needed?
-                env.register_engine file_ext, self, { mime_type: mime_type_to, silence_deprecation: true }
-              else
-                # Sprockets 2.12.4
-                @default_mime_type = mime_type_to
-                env.register_engine file_ext, self
-              end
-            end
-          end
-        else
-          # Sprockets 2.2.3
-          @default_mime_type = mime_type_to
-          app.assets.register_engine file_ext, self
-        end
-      end
-
-    end
-
-    class Processor < SprocketsExtensionBase
-
-      def self.run(filename, source, context)
-        ::RiotJs::Rails::Compiler.compile(source)
-      end
-
-      def self.register_self(app, config)
-        # app is a YourApp::Application
-        # config is Rails::Railtie::Configuration that belongs to RiotJs::Rails::Railtie
-        register_self_helper(app, config, '.tag', 'text/riot-tag', 'application/javascript', :html)
-      end
-
-      def self.register_nested(app, config, type, charset, tilt_template)
-        extention = '.' + type
-        if config.respond_to?(:assets)
-          config.assets.configure do |env|
-            if env.respond_to?(:register_transformer)
-              # Sprockets 3 and 4
-              env.register_mime_type 'text/riot-tag+'+type, extensions: ['.tag'+extention], charset: charset
-              env.register_transformer 'text/riot-tag+'+type, 'application/javascript',
-                Proc.new{ |input| Processor.call(tilt_template.new{input[:data]}.render) }
-            elsif env.respond_to?(:register_engine)
-              if Sprockets::VERSION.start_with?("3")
-                # Sprockets 3 ... is this needed?
-                env.register_engine extention, tilt_template, { silence_deprecation: true }
-              else
-                # Sprockets 2.12.4
-                env.register_engine extention, tilt_template
-              end
-            end
-          end
-        else
-          # Sprockets 2
-          app.assets.register_engine extention, tilt_template
-        end
+      def compile_tag
+        ::RiotJs::Rails::Compiler.compile(@data)
       end
     end
   end

@@ -6,7 +6,7 @@ Muut Riot integration with Rails
 
  1. Nodejs - for tags compiling.
  2. jQuery - for tags mounting (if you're going to use helpers provided by gem).
- 3. Rails 3 and 4 supported
+ 3. Rails 3, 4 and 5 supported
 
 
 ## Installation
@@ -20,7 +20,7 @@ gem 'riot_js-rails'
 Execute:
 
     $ bundle install
-    
+
 Add ```riot``` and ```riot_rails``` to your ```application.js```:
 ```
 //= require riot

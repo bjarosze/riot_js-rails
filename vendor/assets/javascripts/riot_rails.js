@@ -37,8 +37,8 @@
   };
 
   var handleTurbolinksPageLoad = function () {
-    var unmountEvent;
     var mountEvent;
+    var unmountEvent;
 
     if (typeof Turbolinks.EVENTS !== 'undefined') {
       // Turbolinks.EVENTS is in classic version 2.4.0+
@@ -46,8 +46,8 @@
       unmountEvent = Turbolinks.EVENTS.BEFORE_UNLOAD;
     } else if (typeof Turbolinks.controller !== "undefined") {
       // Turbolinks.controller is in version 5+
-      mountEvent = "turbolinks:load";
-      unmountEvent = "turbolinks:before-cache";
+      mountEvent = 'turbolinks:load';
+      unmountEvent = 'turbolinks:before-cache';
     } else {
       mountEvent = 'page:change';
       unmountEvent = 'page:receive';
@@ -64,7 +64,6 @@
     $(document).on(unmountEvent, function(){
       riotRails.unmountAll();
     });
-
   };
 
   if (typeof Turbolinks !== 'undefined' && Turbolinks.supported) {

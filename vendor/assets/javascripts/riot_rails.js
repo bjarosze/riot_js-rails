@@ -37,20 +37,27 @@
   };
 
   var handleTurbolinksPageLoad = function () {
+    var mountEvent;
     var unmountEvent;
 
-    if (Turbolinks.EVENTS) {
+    if (typeof Turbolinks.EVENTS !== 'undefined') {
+      // Turbolinks.EVENTS is in classic version 2.4.0+
+      mountEvent = 'page:change';
       unmountEvent = Turbolinks.EVENTS.BEFORE_UNLOAD;
+    } else if (typeof Turbolinks.controller !== "undefined") {
+      // Turbolinks.controller is in version 5+
+      mountEvent = 'turbolinks:load';
+      unmountEvent = 'turbolinks:before-cache';
     } else {
+      mountEvent = 'page:change';
       unmountEvent = 'page:receive';
       Turbolinks.pagesCached(0);
-
       if (window.ReactRailsUJS.RAILS_ENV_DEVELOPMENT) {
         console.warn('The Turbolinks cache has been disabled (Turbolinks >= 2.4.0 is recommended).');
       }
     }
 
-    $(document).on('page:change', function(){
+    $(document).on(mountEvent, function(){
       riotRails.mountAll();
     });
 

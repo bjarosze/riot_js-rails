@@ -1,16 +1,17 @@
 /**
- * The riot-compiler WIP
+ * The riot-compiler v3.5.1
  *
  * @module compiler
- * @version WIP
+ * @version v3.5.1
  * @license MIT
  * @copyright Muut Inc. + contributors
  */
 'use strict'
-
+var sourcemap = require('./sourcemap')
 var brackets  = require('./brackets')
 var parsers   = require('./parsers')
 var safeRegex = require('./safe-regex')
+var jsSplitter = require('./js-splitter')
 var path      = require('path')
 
 var extend = require('./parsers/_utils').mixobj
@@ -58,7 +59,7 @@ var HTML_COMMS = RegExp(/<!--(?!>)[\S\s]*?-->/.source + '|' + S_LINESTR, 'g')
  *  {@link module:compiler~parseAttribs|parseAttribs}
  * @const {RegExp}
  */
-var HTML_TAGS = /<(-?[A-Za-z][-\w\xA0-\xFF]*)(?:\s+([^"'\/>]*(?:(?:"[^"]*"|'[^']*'|\/[^>])[^'"\/>]*)*)|\s*)(\/?)>/g
+var HTML_TAGS = /<(-?[A-Za-z][-\w\xA0-\xFF]*)(?:\s+([^"'/>]*(?:(?:"[^"]*"|'[^']*'|\/[^>])[^'"/>]*)*)|\s*)(\/?)>/g
 
 /**
  * Matches spaces and tabs between HTML tags
@@ -105,7 +106,7 @@ var SPEC_TYPES = /^"(?:number|date(?:time)?|time|month|email|color)\b/i
  * Matches the 'import' statement
  * @const {RegExp}
  */
-var IMPORT_STATEMENT = /^\s*import(?:(?:\s|[^\s'"])*)['|"].*\n?/gm
+var IMPORT_STATEMENT = /^\s*import(?!\w)(?:(?:\s|[^\s'"])*)['|"].*\n?/gm
 
 /**
  * Matches trailing spaces and tabs by line.
@@ -135,7 +136,7 @@ function cleanSource (src) {
     mm,
     re = HTML_COMMS
 
-  if (~src.indexOf('\r')) {
+  if (src.indexOf('\r') !== 1) {
     src = src.replace(/\r\n?/g, '\n')
   }
 
@@ -187,7 +188,7 @@ function parseAttribs (str, pcex) {
         if (RE_HASEXPR.test(v)) {
 
           if (k === 'value') vexp = 1
-          if (~RIOT_ATTRS.indexOf(k)) k = 'riot-' + k
+          if (RIOT_ATTRS.indexOf(k) !== -1) k = 'riot-' + k
         }
 
         list.push(k + '=' + v)
@@ -292,7 +293,7 @@ function _compileHTML (html, opts, pcex) {
 
     html = html.trim().replace(/\s+/g, ' ')
 
-    if (p.length) html = html.replace(/\u0002/g, function () { return p.shift() })
+    if (p.length) html = html.replace(/\u0002/g, function () { return p.shift() }) // eslint-disable-line
   }
 
   if (opts.compact) html = html.replace(HTML_PACK, '><$1')
@@ -337,24 +338,7 @@ function compileHTML (html, opts, pcex) {
  * 2016-01-18: rewritten to capture only the method name (performant)
  * @const {RegExp}
  */
-var JS_ES6SIGN = /^[ \t]*([$_A-Za-z][$\w]*)\s*\([^()]*\)\s*{/m
-
-/**
- * Regex for remotion of multiline and single-line JavaScript comments, merged with
- * {@link module:brackets.S_QBLOCKS|brackets.S_QBLOCKS} to skip literal string and regexes.
- * Used by the {@link module:compiler~riotjs|riotjs} parser.
- *
- * 2016-01-18: rewritten to not capture the brackets (reduces 9 steps)
- * @const {RegExp}
- */
-var JS_ES6END = RegExp('[{}]|' + brackets.S_QBLOCKS, 'g')
-
-/**
- * Regex for remotion of multiline and single-line JavaScript comments, merged with
- * {@link module:brackets.S_QBLOCKS|brackets.S_QBLOCKS} to skip literal string and regexes.
- * @const {RegExp}
- */
-var JS_COMMS = RegExp(brackets.R_MLCOMMS.source + '|//[^\r\n]*|' + brackets.S_QBLOCKS, 'g')
+var JS_ES6SIGN = /^[ \t]*(((?:async|\*)\s*)?([$_A-Za-z][$\w]*))\s*\([^()]*\)\s*{/m
 
 /**
  * Default parser for JavaScript, supports ES6-like method syntax
@@ -368,46 +352,57 @@ function riotjs (js) {
     match,
     toes5,
     pos,
+    method,
+    prefix,
     name,
     RE = RegExp
 
-  if (~js.indexOf('/')) js = rmComms(js, JS_COMMS)
+  const src = jsSplitter(js)
+  js = src.shift().join('<%>')
 
   while ((match = js.match(JS_ES6SIGN))) {
 
     parts.push(RE.leftContext)
     js  = RE.rightContext
-    pos = skipBody(js, JS_ES6END)
+    pos = skipBody(js)
 
-    name  = match[1]
+    method = match[1]
+    prefix = match[2] || ''
+    name  = match[3]
+
     toes5 = !/^(?:if|while|for|switch|catch|function)$/.test(name)
-    name  = toes5 ? match[0].replace(name, 'this.' + name + ' = function') : match[0]
+
+    if (toes5) {
+      name = match[0].replace(method, 'this.' + name + ' =' + prefix + ' function')
+    } else {
+      name = match[0]
+    }
+
     parts.push(name, js.slice(0, pos))
     js = js.slice(pos)
 
     if (toes5 && !/^\s*.\s*bind\b/.test(js)) parts.push('.bind(this)')
   }
 
-  return parts.length ? parts.join('') + js : js
-
-  function rmComms (s, r, m) {
-    r.lastIndex = 0
-    while ((m = r.exec(s))) {
-      if (m[0][0] === '/' && !m[1] && !m[2]) {
-        s = RE.leftContext + ' ' + RE.rightContext
-        r.lastIndex = m[3] + 1
-      }
-    }
-    return s
+  if (parts.length) {
+    js = parts.join('') + js
   }
 
-  function skipBody (s, r) {
-    var m, i = 1
+  if (src.length) {
+    js = js.replace(/<%>/g, function () {
+      return src.shift()
+    })
+  }
 
-    r.lastIndex = 0
-    while (i && (m = r.exec(s))) {
-      if (m[0] === '{') ++i
-      else if (m[0] === '}') --i
+  return js
+
+  function skipBody (s) {
+    var r = /[{}]/g
+    var i = 1
+
+    while (i && r.exec(s)) {
+      if (s[r.lastIndex - 1] === '{') ++i
+      else --i
     }
     return i ? s.length : r.lastIndex
   }
@@ -630,7 +625,7 @@ var END_TAGS = /\/>\n|^<(?:\/?-?[A-Za-z][-\w\xA0-\xFF]*\s*|-?[A-Za-z][-\w\xA0-\x
 function _q (s, r) {
   if (!s) return "''"
   s = SQ + s.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + SQ
-  return r && ~s.indexOf('\n') ? s.replace(/\n/g, '\\n') : s
+  return r && s.indexOf('\n') !== -1 ? s.replace(/\n/g, '\\n') : s
 }
 
 /**
@@ -673,7 +668,7 @@ function splitBlocks (str) {
       k = str.lastIndexOf('<'),
       n = str.length
 
-    while (~k) {
+    while (k !== -1) {
       m = str.slice(k, n).match(END_TAGS)
       if (m) {
         k += m.index + m[0].length
@@ -732,11 +727,11 @@ function getAttrib (attribs, name) {
  */
 function unescapeHTML (str) {
   return str
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&#039;/g, '\'')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, '\'')
 }
 
 /**
@@ -778,12 +773,12 @@ function getCode (code, opts, attribs, base) {
   }
 
   return _compileJS(
-          code,
-          opts,
-          type,
-          extend(jsParserOptions, getParserOptions(attribs)),
-          base
-        )
+    code,
+    opts,
+    type,
+    extend(jsParserOptions, getParserOptions(attribs)),
+    base
+  )
 }
 
 /**
@@ -833,7 +828,7 @@ var
    * unquoted expressions, but disallows the character '>' within unquoted attribute values.
    * @const {RegExp}
    */
-  CUST_TAG = RegExp(/^([ \t]*)<(-?[A-Za-z][-\w\xA0-\xFF]*)(?:\s+([^'"\/>]+(?:(?:@|\/[^>])[^'"\/>]*)*)|\s*)?(?:\/>|>[ \t]*\n?([\S\s]*)^\1<\/\2\s*>|>(.*)<\/\2\s*>)/
+  CUST_TAG = RegExp(/^([ \t]*)<(-?[A-Za-z][-\w\xA0-\xFF]*)(?:\s+([^'"/>]+(?:(?:@|\/[^>])[^'"/>]*)*)|\s*)?(?:\/>|>[ \t]*\n?([\S\s]*)^\1<\/\2\s*>|>(.*)<\/\2\s*>)/
     .source.replace('@', S_STRINGS), 'gim'),
   /**
    * Matches `script` elements, capturing its attributes in $1 and its content in $2.
@@ -848,7 +843,7 @@ var
    */
   STYLES = /<style(\s+[^>]*)?>\n?([\S\s]*?)<\/style\s*>/gi
 
- /**
+/**
   * The main compiler processes all custom tags, one by one.
   *
   * - Sends the received source to the html parser, if any is specified
@@ -879,6 +874,7 @@ function compile (src, opts, url) {
   var
     parts = [],
     included,
+    output = src,
     defaultParserptions = {
 
       template: {},
@@ -898,10 +894,10 @@ function compile (src, opts, url) {
   var _bp = brackets.array(opts.brackets)
 
   if (opts.template) {
-    src = compileTemplate(src, url, opts.template, opts.parserOptions.template)
+    output = compileTemplate(output, url, opts.template, opts.parserOptions.template)
   }
 
-  src = cleanSource(src)
+  output = cleanSource(output)
     .replace(CUST_TAG, function (_, indent, tagName, attribs, body, body2) {
       var
         jscode = '',
@@ -916,8 +912,8 @@ function compile (src, opts, url) {
 
       attribs = attribs && included('attribs')
         ? restoreExpr(
-            parseAttribs(
-              splitHtml(attribs, opts, pcex),
+          parseAttribs(
+            splitHtml(attribs, opts, pcex),
             pcex),
           pcex) : ''
 
@@ -985,9 +981,27 @@ function compile (src, opts, url) {
 
   if (opts.debug && url.slice(-2) !== '/.') {
     if (/^[\\/]/.test(url)) url = path.relative('.', url)
-    src = '//src: ' + url.replace(/\\/g, '/') + '\n' + src
+    output = '//src: ' + url.replace(/\\/g, '/') + '\n' + output
   }
-  return src
+
+  if (opts.sourcemap) {
+    var map = sourcemap({
+      source: src,
+      generated: output,
+      file: url
+    })
+
+    if (opts.sourcemap === 'inline') {
+      output += '\n' + sourcemap.toInlineComment(map)
+      return output
+    }
+
+    return {
+      map: map,
+      code: output
+    }
+  }
+  return output
 }
 
 module.exports = {
@@ -997,5 +1011,5 @@ module.exports = {
   css: compileCSS,
   js: compileJS,
   parsers: parsers,
-  version: 'WIP'
+  version: 'v3.5.1'
 }

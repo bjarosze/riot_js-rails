@@ -4,14 +4,16 @@
  * Brackets support for the node.js version of the riot-compiler
  * @module
  */
-var safeRegex = require('./safe-regex.js')
+
+var safeRegex = require('./safe-regex')
+var skipRegex = require('skip-regex')
 
 /**
  * Matches valid, multiline JavaScript comments in almost all its forms.
  * @const {RegExp}
  * @static
  */
-var R_MLCOMMS = /\/\*[^*]*\*+(?:[^*\/][^*]*\*+)*\//g
+var R_MLCOMMS = /\/\*[^*]*\*+(?:[^*/][^*]*\*+)*\//g
 
 /**
  * Matches single and double quoted strings. Don't care about inner EOLs, so it
@@ -20,7 +22,7 @@ var R_MLCOMMS = /\/\*[^*]*\*+(?:[^*\/][^*]*\*+)*\//g
  * @const {RegExp}
  * @static
  */
-var R_STRINGS = /"[^"\\]*(?:\\[\S\s][^"\\]*)*"|'[^'\\]*(?:\\[\S\s][^'\\]*)*'/g
+var R_STRINGS = /"[^"\\]*(?:\\[\S\s][^"\\]*)*"|'[^'\\]*(?:\\[\S\s][^'\\]*)*'|`[^`\\]*(?:\\[\S\s][^`\\]*)*`/g
 
 /**
  * The {@link module:brackets.R_STRINGS|R_STRINGS} source combined with sources of
@@ -31,8 +33,13 @@ var R_STRINGS = /"[^"\\]*(?:\\[\S\s][^"\\]*)*"|'[^'\\]*(?:\\[\S\s][^'\\]*)*'/g
  * @static
  */
 var S_QBLOCKS = R_STRINGS.source + '|' +
-  /(?:\breturn\s+|(?:[$\w\)\]]|\+\+|--)\s*(\/)(?![*\/]))/.source + '|' +
-  /\/(?=[^*\/])[^[\/\\]*(?:(?:\[(?:\\.|[^\]\\]*)*\]|\\.)[^[\/\\]*)*?(\/)[gim]*/.source
+  /(?:\breturn\s+|(?:[$\w)\]]|\+\+|--)\s*(\/)(?![*/]))/.source + '|' +
+  /\/(?=[^*/])[^[/\\]*(?:(?:\[(?:\\.|[^\]\\]*)*\]|\\.)[^[/\\]*)*?([^<]\/)[gim]*/.source
+
+/*
+  JS/ES6 quoted strings and start of regex (basic ES6 does not supports nested backquotes).
+*/
+var S_QBLOCK2 = R_STRINGS.source + '|(/)(?![*/])'
 
 /**
  * Hash of regexes for matching JavaScript brackets out of quoted strings and literal
@@ -41,9 +48,9 @@ var S_QBLOCKS = R_STRINGS.source + '|' +
  * @const {object}
  */
 var FINDBRACES = {
-  '(': RegExp('([()])|'   + S_QBLOCKS, 'g'),
-  '[': RegExp('([[\\]])|' + S_QBLOCKS, 'g'),
-  '{': RegExp('([{}])|'   + S_QBLOCKS, 'g')
+  '(': RegExp('([()])|'   + S_QBLOCK2, 'g'),
+  '[': RegExp('([[\\]])|' + S_QBLOCK2, 'g'),
+  '{': RegExp('([{}])|'   + S_QBLOCK2, 'g')
 }
 
 /**
@@ -92,7 +99,9 @@ function _rewrite (re) {
 module.exports = {
   R_STRINGS: R_STRINGS,
   R_MLCOMMS: R_MLCOMMS,
-  S_QBLOCKS: S_QBLOCKS
+  S_QBLOCKS: S_QBLOCKS,
+  S_QBLOCK2: S_QBLOCK2,
+  skipRegex: skipRegex
 }
 
 /**
@@ -140,13 +149,18 @@ module.exports.split = function split (str, _, _bp) {
         $1: optional escape character,
         $2: opening js bracket `{[(`,
         $3: closing riot bracket,
-        $4 & $5: qblocks
+        $4: opening slashes of regex
       */
       if (match[2]) {                     // if have a javascript opening bracket,
         re.lastIndex = skipBraces(str, match[2], re.lastIndex)
         continue                          // skip the bracketed block and loop
       }
+
       if (!match[3]) {                    // if don't have a closing bracket
+        // look here if this "regex" is a real regex (riot#2361)
+        if (match[4]) {
+          re.lastIndex = skipRegex(str, match.index)
+        }
         continue                          // search again
       }
     }
@@ -158,7 +172,7 @@ module.exports.split = function split (str, _, _bp) {
     if (!match[1]) {                      // ignore it if have an escape char
       unescapeStr(str.slice(start, pos))  // push part, even if empty
       start = re.lastIndex                // next position is the new start
-      re = _bp[6 + (isexpr ^= 1)] // switch mode and swap regexp
+      re = _bp[6 + (isexpr = !isexpr)]         // switch mode and swap regexp
       re.lastIndex = start                // update the regex pointer
     }
   }
@@ -206,8 +220,12 @@ module.exports.split = function split (str, _, _bp) {
     rr.lastIndex = ix
     ix = 1
     while ((mm = rr.exec(s))) {
-      if (mm[1] &&
-        !(mm[1] === ch ? ++ix : --ix)) break
+      if (mm[1]) {
+        if (mm[1] === ch) ++ix
+        else if (!--ix) break
+      } else if (mm[2]) {
+        rr.lastIndex = skipRegex(str, mm.index)
+      }
     }
 
     if (ix) {
